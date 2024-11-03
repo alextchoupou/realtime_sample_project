@@ -43,6 +43,35 @@ services:
       timeout: 5s
       retries: 5
 
+  flink-jobmanager:
+    build:
+      context: ./flink
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+    command: jobmanager
+    depends_on:
+      - zookeeper
+      - broker
+
+  flink-taskmanager:
+    build:
+      context: ./flink
+      dockerfile: Dockerfile
+    depends_on:
+      - flink-jobmanager
+    command: taskmanager
+    scale: 1
+    environment:
+      - |
+        FLINK_PROPERTIES=
+        jobmanager.rpc.address: flink-jobmanager
+        taskmanager.numberOfTaskSlots: 4
+
   postgres:
     image: postgres:latest
     container_name: postgres
