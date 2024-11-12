@@ -36,13 +36,13 @@ def delivery_report(err, msg):
 def main():
     topic = 'financial_transaction'
     producer = SerializingProducer({
-        'bootstrap.servers': 'localhost:9092',
-        'key.serializer': lambda v, ctx: str(v).encode('utf-8'),
-        'value.serializer': lambda v, ctx: json.dumps(v).encode('utf-8')
+        'bootstrap.servers': 'broker:29092',
+        'client.id': 'python-producer'
     })
+    print("Connecting to Kafka...")
     current_time = datetime.now()
 
-    while (datetime.now() - current_time).seconds < 120:
+    while (datetime.now() - current_time).seconds < 360:
         try:
             transaction = generate_sales_transactions()
             transaction['totalAmount'] = transaction['productPrice'] * transaction['productQuantity']
@@ -53,8 +53,7 @@ def main():
                              value=json.dumps(transaction),
                              on_delivery=delivery_report
                              )
-            producer.poll(0)
-
+            producer.poll(0.5)
             time.sleep(1)
 
         except BufferError:
@@ -63,6 +62,11 @@ def main():
 
         except Exception as e:
             print(e)
+
+        finally:
+            producer.flush()
+
+    producer.flush(0)
 
 
 if __name__ == "__main__":

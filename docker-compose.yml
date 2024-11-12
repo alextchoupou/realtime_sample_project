@@ -1,6 +1,6 @@
 services:
   zookeeper:
-    image: confluentinc/cp-zookeeper:7.4.0
+    image: confluentinc/cp-zookeeper:7.5.1
     hostname: zookeeper
     container_name: zookeeper
     ports:
@@ -13,9 +13,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: always
 
   broker:
-    image: confluentinc/cp-kafka:7.4.0
+    image: confluentinc/cp-kafka:7.5.1
     hostname: broker
     container_name: broker
     depends_on:
@@ -27,50 +28,94 @@ services:
     environment:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_LISTENERS: 'PLAINTEXT://broker:29092,CONTROLLER://broker:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://broker:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_CONFLUENT_METRICS_REPORTER_BOOTSTRAP_SERVERS: 'broker:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      # KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG4J_ROOT_LOGLEVEL: ERROR
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_CONFLUENT_LICENSE_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@broker:29093'
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
     healthcheck:
       test: [ "CMD", "bash", "-c", 'nc -z localhost 9092' ]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: always
 
-  flink-jobmanager:
-    build:
-      context: ./flink
-      dockerfile: Dockerfile
+  python-producer:
+    image: python-producer
+    container_name: python-producer
+    volumes:
+      - ./:/app
+    working_dir: /app
+    command: [ "python", "file.py" ]
+    depends_on:
+      - broker
+    environment:
+      - BOOTSTRAP_SERVERS=broker:29092
+    restart: always
+
+
+  jobmanager:
+    image: flink:1.20.0-scala_2.12-java11
+    hostname: jobmanager
+    container_name: jobmanager
     ports:
       - "8081:8081"
     environment:
       - |
         FLINK_PROPERTIES=
-        jobmanager.rpc.address: flink-jobmanager
+        jobmanager.rpc.address: jobmanager
+        rest.bind-port: 8081
+        rest.address: jobmanager
+        rest.profiling.enabled: true
+
     command: jobmanager
     depends_on:
       - zookeeper
       - broker
+    volumes:
+      - shared-volume:/shared
+    restart: always
 
-  flink-taskmanager:
-    build:
-      context: ./flink
-      dockerfile: Dockerfile
+  taskmanager:
+    image:  flink:1.20.0-scala_2.12-java11
+    hostname: taskmanager
+    container_name: taskmanager
     depends_on:
-      - flink-jobmanager
+      - jobmanager
     command: taskmanager
     scale: 1
+    links:
+      - "jobmanager:jobmanager"
     environment:
       - |
         FLINK_PROPERTIES=
-        jobmanager.rpc.address: flink-jobmanager
-        taskmanager.numberOfTaskSlots: 4
+        jobmanager.rpc.address: jobmanager
+        taskmanager.numberOfTaskSlots: 10
+        parallelism.default: 4
+
+    restart: always
+
+  job-jar:
+    image: job-jar
+    container_name: java-job
+    depends_on:
+      - jobmanager
+    volumes:
+      - shared-volume:/shared
+    restart: always
+#    entrypoint: ["java", "-cp", "/shared/app.jar:/app/flink-dist.jar", "group.ventis.DataStreamJob"]
 
   postgres:
     image: postgres:latest
@@ -86,6 +131,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: always
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
@@ -96,6 +142,7 @@ services:
     ports:
       - 9200:9200
 
+
   kibana:
     container_name: kb-container
     image: docker.elastic.co/kibana/kibana:8.11.1
@@ -105,3 +152,6 @@ services:
       - elasticsearch
     ports:
       - 5601:5601
+
+volumes:
+  shared-volume :
