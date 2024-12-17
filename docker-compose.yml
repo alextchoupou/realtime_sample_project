@@ -63,7 +63,7 @@ services:
       - broker
     environment:
       - BOOTSTRAP_SERVERS=broker:29092
-    restart: always
+    # restart: always
 
 
   jobmanager:
@@ -79,6 +79,8 @@ services:
         rest.bind-port: 8081
         rest.address: jobmanager
         rest.profiling.enabled: true
+        parallelism.default: 2
+        
 
     command: jobmanager
     depends_on:
@@ -103,7 +105,7 @@ services:
         FLINK_PROPERTIES=
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: 10
-        parallelism.default: 4
+        parallelism.default: 2
 
     restart: always
 
@@ -115,7 +117,7 @@ services:
     volumes:
       - shared-volume:/shared
     restart: always
-#    entrypoint: ["java", "-cp", "/shared/app.jar:/app/flink-dist.jar", "group.ventis.DataStreamJob"]
+    entrypoint: ["java", "-cp", "/shared/app.jar:/app/flink-dist.jar", "group.ventis.DataStreamJob"]
 
   postgres:
     image: postgres:latest
@@ -123,31 +125,35 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_USER: ventis
+      POSTGRES_PASSWORD: ventis
+      POSTGRES_DB: ventis
     healthcheck:
-      test: [ "CMD", "pg_isready", "-U", "postgres" ]
+      test: [ "CMD", "pg_isready", "-U", "ventis" ]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: always
 
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
-    container_name: es-container
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.25
+    container_name: elasticsearch
     environment:
-      - xpack.security.enabled=false
+      - xpack.security.enabled=true
       - discovery.type=single-node
+  #    - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+
     ports:
       - 9200:9200
 
 
   kibana:
     container_name: kb-container
-    image: docker.elastic.co/kibana/kibana:8.11.1
+    image: docker.elastic.co/kibana/kibana:7.17.25
     environment:
-      - ELASTICSEARCH_HOSTS=http://es-container:9200
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+     # - ELASTICSEARCH_USERNAME=kibana_system
+      #- ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
     depends_on:
       - elasticsearch
     ports:
