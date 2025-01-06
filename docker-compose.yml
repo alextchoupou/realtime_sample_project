@@ -80,7 +80,7 @@ services:
         rest.address: jobmanager
         rest.profiling.enabled: true
         parallelism.default: 2
-        
+      - JAVA_OPTS=-Djavax.net.ssl.trustStore=$JAVA_HOME/lib/security/cacerts -Djavax.net.ssl.trustStorePassword=changeit
 
     command: jobmanager
     depends_on:
@@ -106,7 +106,6 @@ services:
         jobmanager.rpc.address: jobmanager
         taskmanager.numberOfTaskSlots: 10
         parallelism.default: 2
-
     restart: always
 
   job-jar:
@@ -122,6 +121,8 @@ services:
   postgres:
     image: postgres:latest
     container_name: postgres
+    volumes:
+      - ./docker/postgresql/data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     environment:
@@ -135,29 +136,70 @@ services:
       retries: 5
     restart: always
 
+  droolsse:
+    image: droolsse
+    container_name: droolsse
+    depends_on:
+      - postgres
+      - elasticsearch
+    restart: always
+    entrypoint: [ "java", "-jar", "/drools/app.jar"]
+
+
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.25
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     container_name: elasticsearch
-    environment:
-      - xpack.security.enabled=true
-      - discovery.type=single-node
-  #    - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    #  - ./init-elasticsearch.sh:/usr/share/elasticsearch/init-elasticsearch.sh
     ports:
-      - 9200:9200
-
+      - ${ES_PORT}:9200
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
+      - ELASTIC_USERNAME=${ELASTIC_USERNAME}
+      - KIBANA_SYSTEM_PASSWORD=${ELASTIC_PASSWORD}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true
+      - xpack.license.self_generated.type=${LICENSE}
+      - xpack.security.authc.api_key.enabled=true
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    #command: ["/bin/bash", "-c", "/usr/share/elasticsearch/init-elasticsearch.sh && /usr/local/bin/docker-entrypoint.sh"]
 
   kibana:
-    container_name: kb-container
-    image: docker.elastic.co/kibana/kibana:7.17.25
-    environment:
-      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
-     # - ELASTICSEARCH_USERNAME=kibana_system
-      #- ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
     depends_on:
       - elasticsearch
+    image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
+    container_name: kibana
+    volumes:
+      - kibana_data:/usr/share/kibana/data
+      - ./configure-kibana.sh:/usr/share/kibana/configure-kibana.sh
     ports:
-      - 5601:5601
+      - ${KIBANA_PORT}:5601
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+#      - ELASTICSEARCH_URL=http://172.19.0.2:9200
+      - ELASTICSEARCH_USERNAME=kibana_system
+      - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+#      - XPACK_SECURITY_ENCRYPTIONKEY=${ENCRYPTION_KEY}
+#      - XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY=${ENCRYPTION_KEY}
+#      - XPACK_REPORTING_ENCRYPTIONKEY=${ENCRYPTION_KEY}
+      - KIBANA_PASSWORD=${KIBANA_PASSWORD}
+    mem_limit: ${MEM_LIMIT}
+    entrypoint:   >
+      /bin/bash -c "
+      /bin/bash /usr/share/kibana/configure-kibana.sh "
+    restart: always
+  
 
 volumes:
+  es_data:
+    driver: local
+  kibana_data:
+    driver: local
   shared-volume :

@@ -1,4 +1,1 @@
-faker
 confluent-kafka
-pandas
-openpyxl
