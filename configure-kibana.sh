@@ -42,6 +42,7 @@ add_config "elasticsearch.password" "\"${KIBANA_PASSWORD}\""
 add_config "xpack.encryptedSavedObjects.encryptionKey" "\"${ENCRYPTION_KEY}\""
 add_config "xpack.reporting.encryptionKey" "\"${REPORTING_KEY}\""
 add_config "xpack.security.encryptionKey" "\"${SECURITY_KEY}\""
+add_config "i18n.locale" "\"fr\""
 
 echo "Configuration automatique de Kibana terminée."
 exec /bin/tini -- /usr/share/kibana/bin/kibana
